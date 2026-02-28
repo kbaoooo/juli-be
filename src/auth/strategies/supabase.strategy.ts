@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
+import { passportJwtSecret } from 'jwks-rsa';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -10,15 +11,27 @@ export class SupabaseStrategy extends PassportStrategy(Strategy, 'jwt') {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    const jwtSecret = configService.get<string>('SUPABASE_JWT_SECRET');
-    if (!jwtSecret) {
-      throw new Error('SUPABASE_JWT_SECRET is not defined in environment variables');
+    const supabaseUrl = configService.get<string>('SUPABASE_URL');
+    const anonKey = configService.get<string>('SUPABASE_ANON_KEY');
+
+    if (!supabaseUrl || !anonKey) {
+      throw new Error('SUPABASE_URL or SUPABASE_ANON_KEY is not defined');
     }
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: jwtSecret,
+      secretOrKeyProvider: passportJwtSecret({
+        jwksUri: `${supabaseUrl}/auth/v1/.well-known/jwks.json`,
+        cache: true,
+        cacheMaxEntries: 5,
+        cacheMaxAge: 600000, // 10 minutes
+        requestHeaders: {
+          apiKey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+      }),
+      algorithms: ['ES256'],
     });
   }
 
